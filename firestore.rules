@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Admins can read and update user status
+      allow read, update: if request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'digitaltechyx@gmail.com';
+      
+      // Anyone authenticated can create a user profile (for registration)
+      allow create: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Images collection rules
+    match /images/{imageId} {
+      // Users can read and create their own images
+      allow read, create: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      
+      // Users can only create images if they own them
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      
+      // Admins can read all images
+      allow read: if request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'digitaltechyx@gmail.com';
+      
+      // Allow reading for all authenticated users (simplified for now)
+      allow read: if request.auth != null;
+    }
+    
+    // Notifications collection rules
+    match /notifications/{notificationId} {
+      // Any authenticated user can create and read notifications (for testing)
+      allow create, read: if request.auth != null;
+      
+      // Admins can update and delete all notifications
+      allow update, delete: if request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'digitaltechyx@gmail.com';
+    }
+  }
+}

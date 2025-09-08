@@ -1,0 +1,630 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { EmojiPicker } from "@/components/emoji-picker";
+import { UploadCloud, Zap, CheckCircle, AlertCircle, Camera } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, query, where, getDocs, Timestamp } from "firebase/firestore";
+import { storage, db } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
+import { 
+  compressImage, 
+  getOptimalCompressionOptions, 
+  formatFileSize, 
+  isValidImageType,
+  getCompressionPreview,
+  type CompressionResult 
+} from "@/lib/imageCompression";
+
+export default function UploadPage() {
+  const [isUploadedToday, setIsUploadedToday] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [compressedFile, setCompressedFile] = useState<File | null>(null);
+  const [compressionResult, setCompressionResult] = useState<CompressionResult | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [totalImages, setTotalImages] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [moodText, setMoodText] = useState("");
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const { toast } = useToast();
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
+  
+  const totalDays = 30;
+  const progressPercentage = (totalImages / totalDays) * 100;
+
+  useEffect(() => {
+    if (!user) return;
+    
+    const checkTodayUpload = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      
+      try {
+        const imagesRef = collection(db, 'images');
+        const q = query(
+          imagesRef,
+          where('userId', '==', user.uid),
+          where('uploadDate', '==', today)
+        );
+        const querySnapshot = await getDocs(q);
+        setIsUploadedToday(!querySnapshot.empty);
+        
+        // Get total images count
+        const allImagesQuery = query(
+          imagesRef,
+          where('userId', '==', user.uid)
+        );
+        const allImagesSnapshot = await getDocs(allImagesQuery);
+        setTotalImages(allImagesSnapshot.size);
+      } catch (error) {
+        console.error('Error checking today upload:', error);
+      }
+    };
+
+    checkTodayUpload();
+  }, [user]);
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const file = event.target.files[0];
+      
+      // Validate file type
+      if (!isValidImageType(file)) {
+        toast({
+          title: "Invalid File Type",
+          description: "Please select a valid image file (JPEG, PNG, GIF, or WebP).",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setSelectedFile(file);
+      setCompressedFile(null);
+      setCompressionResult(null);
+      
+      // Auto-compress the image
+      await compressSelectedFile(file);
+    }
+  };
+
+  const handleCameraClick = async () => {
+    try {
+      // Check if camera is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        // Fallback to file input with camera capture
+        const cameraInput = document.createElement('input');
+        cameraInput.type = 'file';
+        cameraInput.accept = 'image/*';
+        cameraInput.capture = 'environment';
+        cameraInput.style.display = 'none';
+        
+        cameraInput.onchange = async (event) => {
+          const target = event.target as HTMLInputElement;
+          if (target.files && target.files.length > 0) {
+            const file = target.files[0];
+            await processSelectedFile(file);
+          }
+        };
+        
+        document.body.appendChild(cameraInput);
+        cameraInput.click();
+        document.body.removeChild(cameraInput);
+        return;
+      }
+
+      // Access camera and show preview modal
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment' // Prefer rear camera on mobile
+        } 
+      });
+      
+      setCameraStream(stream);
+      setShowCameraModal(true);
+      
+    } catch (error) {
+      console.error('Camera access error:', error);
+      
+      // Fallback to file input
+      const cameraInput = document.createElement('input');
+      cameraInput.type = 'file';
+      cameraInput.accept = 'image/*';
+      cameraInput.capture = 'environment';
+      cameraInput.style.display = 'none';
+      
+      cameraInput.onchange = async (event) => {
+        const target = event.target as HTMLInputElement;
+        if (target.files && target.files.length > 0) {
+          const file = target.files[0];
+          await processSelectedFile(file);
+        }
+      };
+      
+      document.body.appendChild(cameraInput);
+      cameraInput.click();
+      document.body.removeChild(cameraInput);
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = document.getElementById('camera-video') as HTMLVideoElement;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (video && ctx) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Draw the video frame to canvas
+      ctx.drawImage(video, 0, 0);
+      
+      // Convert canvas to blob
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          // Stop the camera stream
+          if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            setCameraStream(null);
+          }
+          
+          // Close modal
+          setShowCameraModal(false);
+          
+          // Create a file from the blob
+          const file = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
+          await processSelectedFile(file);
+        }
+      }, 'image/jpeg', 0.8);
+    }
+  };
+
+  const closeCameraModal = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setShowCameraModal(false);
+  };
+
+  const processSelectedFile = async (file: File) => {
+    // Validate file type
+    if (!isValidImageType(file)) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please select a valid image file (JPEG, PNG, GIF, or WebP).",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setSelectedFile(file);
+    setCompressedFile(null);
+    setCompressionResult(null);
+    
+    // Auto-compress the image
+    await compressSelectedFile(file);
+  };
+
+  const compressSelectedFile = async (file: File) => {
+    setIsCompressing(true);
+    
+    try {
+      const options = getOptimalCompressionOptions(file);
+      const result = await compressImage(file, options);
+      
+      setCompressionResult(result);
+      setCompressedFile(result.compressedFile);
+      
+      if (result.success) {
+        toast({
+          title: "Image Compressed",
+          description: `File size reduced by ${Math.round(result.compressionRatio)}% (${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)})`,
+        });
+      } else {
+        toast({
+          title: "Compression Warning",
+          description: "Could not compress image, using original file.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Compression error:', error);
+      toast({
+        title: "Compression Error",
+        description: "Failed to compress image. Please try a different file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a picture to upload.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to upload images.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (userProfile?.status !== 'approved') {
+      toast({
+        title: "Account not approved",
+        description: "Your account must be approved before you can upload images.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (totalImages >= 30) {
+      toast({
+        title: "Upload limit reached",
+        description: "You have reached the maximum of 30 photos for your journey.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Use compressed file if available, otherwise use original
+    const fileToUpload = compressedFile || selectedFile;
+
+    // Check file size (1MB = 1,048,576 bytes)
+    const maxSizeInBytes = 1 * 1024 * 1024; // 1MB
+    if (fileToUpload.size > maxSizeInBytes) {
+      const fileSizeInMB = (fileToUpload.size / 1024 / 1024).toFixed(2);
+      toast({
+        title: "File Too Large",
+        description: `Image size is ${fileSizeInMB}MB. Maximum allowed size is 1MB. Please try a different image.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const fileName = `${user.uid}/${today}_${Date.now()}_${fileToUpload.name}`;
+      const storageRef = ref(storage, `images/${fileName}`);
+      
+      const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
+
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(progress);
+        },
+        (error) => {
+          console.error('Upload error:', error);
+          toast({
+            title: "Upload Failed",
+            description: "Failed to upload image. Please try again.",
+            variant: "destructive",
+          });
+          setIsUploading(false);
+          setUploadProgress(null);
+        },
+        async () => {
+          // Upload completed successfully
+          try {
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            
+            // Save image metadata to Firestore
+            await addDoc(collection(db, 'images'), {
+              userId: user.uid,
+              imageUrl: downloadURL,
+              uploadDate: today,
+              createdAt: Timestamp.now(),
+              fileName: fileToUpload.name,
+              filePath: fileName,
+              moodText: moodText.trim() || null, // Save mood text, or null if empty
+              moodEmoji: selectedEmoji // Save selected emoji
+            });
+
+            setIsUploadedToday(true);
+            setTotalImages(prev => prev + 1);
+            setSelectedFile(null);
+            setCompressedFile(null);
+            setCompressionResult(null);
+            setMoodText("");
+            setSelectedEmoji(null);
+            
+            const compressionMessage = compressionResult ? 
+              ` (compressed from ${formatFileSize(compressionResult.originalSize)})` : '';
+            
+            toast({
+              title: "Upload Successful!",
+              description: `Photo for Day ${totalImages + 1} has been uploaded${compressionMessage}.`,
+            });
+
+            // Reset file input
+            const fileInput = document.getElementById('dropzone-file') as HTMLInputElement;
+            if (fileInput) fileInput.value = '';
+            
+          } catch (error) {
+            console.error('Error saving to Firestore:', error);
+            toast({
+              title: "Upload Error",
+              description: "Image uploaded but failed to save metadata.",
+              variant: "destructive",
+            });
+          } finally {
+            setIsUploading(false);
+            setUploadProgress(null);
+          }
+        }
+      );
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: "Failed to start upload. Please try again.",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+      setUploadProgress(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6 sm:space-y-8 max-w-2xl mx-auto px-4 sm:px-0">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Upload Your Photo</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">
+          Capture your moment for today. You can upload one picture per day.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-headline">Your 30-Day Progress</CardTitle>
+          <CardDescription>Day {totalImages} of {totalDays}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Progress value={progressPercentage} className="w-full" />
+        </CardContent>
+      </Card>
+
+      {compressionResult && (
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader>
+            <CardTitle className="font-headline text-green-800 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Image Optimized
+            </CardTitle>
+            <CardDescription className="text-green-700">
+              Your image has been automatically compressed for optimal upload.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground">Original Size</p>
+                <p className="font-medium">{formatFileSize(compressionResult.originalSize)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Compressed Size</p>
+                <p className="font-medium text-green-600">{formatFileSize(compressionResult.compressedSize)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Size Reduction</p>
+                <p className="font-medium text-green-600">{Math.round(compressionResult.compressionRatio)}%</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Space Saved</p>
+                <p className="font-medium text-green-600">{formatFileSize(compressionResult.originalSize - compressionResult.compressedSize)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-headline">
+            {isUploadedToday ? "Today's Photo Uploaded" : "Upload for Today"}
+          </CardTitle>
+          <CardDescription>
+            {isUploadedToday
+              ? "Great job! Come back tomorrow to upload your next photo."
+              : "Select a high-quality image to add to your gallery. Images are automatically compressed to meet the 1MB limit."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-center w-full">
+            <label
+              htmlFor="dropzone-file"
+              className={`flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-muted ${isUploadedToday ? 'cursor-not-allowed opacity-50' : ''}`}
+            >
+              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
+                <p className="mb-2 text-sm text-muted-foreground">
+                  <span className="font-semibold">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-muted-foreground">PNG, JPG, GIF, or WebP (Maximum file size: 1MB)</p>
+                {selectedFile && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-primary">{selectedFile.name}</p>
+                    <div className="space-y-1">
+                      <p className={`text-xs ${(selectedFile.size / 1024 / 1024) > 1 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        Original: {formatFileSize(selectedFile.size)}
+                      {(selectedFile.size / 1024 / 1024) > 1 && ' (Too large!)'}
+                    </p>
+                      {compressionResult && (
+                        <div className="flex items-center gap-1">
+                          <CheckCircle className="h-3 w-3 text-green-500" />
+                          <p className="text-xs text-green-600">
+                            Compressed: {formatFileSize(compressionResult.compressedSize)} 
+                            ({Math.round(compressionResult.compressionRatio)}% smaller)
+                          </p>
+                        </div>
+                      )}
+                      {isCompressing && (
+                        <div className="flex items-center gap-1">
+                          <Zap className="h-3 w-3 text-blue-500 animate-pulse" />
+                          <p className="text-xs text-blue-600">Compressing image...</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Input 
+                id="dropzone-file" 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                disabled={isUploadedToday} 
+                onChange={handleFileChange} 
+              />
+            </label>
+          </div>
+
+          {/* Camera Button */}
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCameraClick}
+              disabled={isUploadedToday}
+              className="flex items-center gap-2"
+            >
+              <Camera className="h-4 w-4" />
+              Take Photo with Camera
+            </Button>
+          </div>
+
+          {/* Mood/Feeling Input */}
+          <div className="space-y-4">
+            <EmojiPicker
+              selectedEmoji={selectedEmoji}
+              onEmojiSelect={setSelectedEmoji}
+              className="border-2 border-dashed border-muted-foreground/25"
+            />
+            
+            {/* Optional Text Input */}
+            <div className="space-y-2">
+              <label htmlFor="mood-text" className="text-sm font-medium">
+                Additional thoughts <span className="text-muted-foreground">(Optional)</span>
+              </label>
+              <Textarea
+                id="mood-text"
+                placeholder="Add more details about your day or feelings..."
+                value={moodText}
+                onChange={(e) => setMoodText(e.target.value)}
+                className="min-h-[80px] resize-none"
+                disabled={isUploadedToday}
+                maxLength={300}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Optional: Add more context to your mood</span>
+                <span>{moodText.length}/300</span>
+              </div>
+            </div>
+          </div>
+
+          {uploadProgress !== null && uploadProgress < 100 && (
+            <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Uploading...</p>
+                <Progress value={uploadProgress} />
+            </div>
+          )}
+
+          <Button 
+            onClick={handleUpload} 
+            className="w-full" 
+            disabled={isUploadedToday || isUploading || isCompressing || !selectedFile}
+          >
+            {isCompressing ? (
+              <>
+                <Zap className="mr-2 h-4 w-4 animate-pulse" />
+                Compressing...
+              </>
+            ) : isUploading ? (
+              "Uploading..."
+            ) : (
+              "Upload Picture"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Camera Preview Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Take Photo</h3>
+              <button
+                onClick={closeCameraModal}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="relative">
+              <video
+                id="camera-video"
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-48 sm:h-64 bg-gray-200 rounded-lg object-cover"
+                ref={(video) => {
+                  if (video && cameraStream) {
+                    video.srcObject = cameraStream;
+                  }
+                }}
+              />
+              
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="border-4 border-white rounded-lg w-32 h-32 sm:w-48 sm:h-48 opacity-50"></div>
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 mt-6">
+              <Button
+                onClick={closeCameraModal}
+                variant="outline"
+                className="flex items-center gap-2 w-full sm:w-auto"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={capturePhoto}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              >
+                <Camera className="h-4 w-4" />
+                Capture Photo
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

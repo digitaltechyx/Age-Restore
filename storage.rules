@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Images storage rules - match the actual file structure
+    match /images/{userId}/{fileName} {
+      // Users can upload to their own folder
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.size < 1 * 1024 * 1024  // 1MB max file size
+        && request.resource.contentType.matches('image/.*');  // Only images
+      
+      // Users can read their own images
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow authenticated users to read images (for admin access)
+      // This is needed because Storage rules don't have easy access to user email
+      allow read: if request.auth != null;
+    }
+
+    // Profile pictures storage rules - Updated
+    match /profile-pics/{fileName} {
+      // Users can upload profile pictures (fileName contains userId)
+      allow create: if request.auth != null 
+        && request.resource.size < 1 * 1024 * 1024  // 1MB max file size
+        && request.resource.contentType.matches('image/.*')  // Only images
+        && fileName.matches('.*' + request.auth.uid + '.*');  // FileName must contain user ID
+      
+      // Users can read profile pictures
+      allow read: if request.auth != null;
+      
+      // Users can update/delete their own profile pictures
+      allow update, delete: if request.auth != null 
+        && fileName.matches('.*' + request.auth.uid + '.*');  // FileName must contain user ID
+    }
+  }
+}
+
+}

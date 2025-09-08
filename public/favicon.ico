@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <defs>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#b91c1c"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Beautiful drop shape for 16x16 -->
+  <path d="M8 2 C6 4, 5 6, 5 8.5 C5 11.537, 6.463 14, 8 14 C9.537 14, 11 11.537, 11 8.5 C11 6, 10 4, 8 2 Z" 
+        fill="url(#dropGrad)"/>
+  
+  <!-- Small highlight -->
+  <ellipse cx="7.2" cy="8" rx="0.8" ry="1.5" fill="rgba(255,255,255,0.4)"/>
+</svg>
+
+

@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, doc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { sendUserAccountStatusEmail } from "@/lib/email-utils";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -158,20 +157,6 @@ export default function AdminUsersPage() {
         } : user
       ));
       
-      // Send email notification to user
-      if (user && (newStatus === 'approved' || newStatus === 'disapproved')) {
-        try {
-          await sendUserAccountStatusEmail(
-            user.email, 
-            user.name, 
-            newStatus === 'approved' ? 'approved' : 'disapproved'
-          );
-        } catch (emailError) {
-          console.error('Email notification error:', emailError);
-          // Don't fail the status update if email fails
-        }
-      }
-      
       toast({
         title: "Status Updated",
         description: `User status has been updated to ${newStatus}.`,
@@ -208,8 +193,8 @@ export default function AdminUsersPage() {
       
       const imagesByUser: { [userId: string]: any[] } = {};
       imagesSnapshot.forEach((doc) => {
-        const imageData = { id: doc.id, ...doc.data() };
-        const userId = imageData.userId;
+        const imageData = { id: doc.id, ...doc.data() } as any;
+        const userId = (imageData as any).userId;
         if (!imagesByUser[userId]) {
           imagesByUser[userId] = [];
         }

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy, doc, updateDoc, where, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { sendUserRefundResponseEmail } from "@/lib/email-utils";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -150,24 +149,6 @@ export default function AdminNotificationsPage() {
         rejected: 'Rejected'
       }[refundStatus];
       
-      // Send email notification to user if refund is accepted or rejected
-      if (refundStatus === 'accepted' || refundStatus === 'rejected') {
-        const notification = notifications.find(n => n.id === id);
-        if (notification) {
-          try {
-            await sendUserRefundResponseEmail(
-              notification.userEmail,
-              notification.userName,
-              refundStatus === 'accepted' ? 'approved' : 'rejected',
-              adminMessage
-            );
-            console.log('✅ User refund response email sent');
-          } catch (emailError) {
-            console.error('❌ Failed to send user refund response email:', emailError);
-            // Don't fail the whole operation if email fails
-          }
-        }
-      }
       
       toast({
         title: "Refund Status Updated",

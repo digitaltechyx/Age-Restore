@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { doc, updateDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, getDocs, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
+import { compressImage, getFileSizeInMB, formatFileSize } from "@/lib/image-compression";
 // Removed direct email import - now using API endpoint
 import { Mail, Phone, MapPin, Calendar, AlertTriangle, Clock, CheckCircle, XCircle, RefreshCw, Upload, Camera, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -116,16 +117,6 @@ export default function ProfilePage() {
   const handleAvatarUpload = async (file: File) => {
     if (!user || !userProfile) return;
 
-    // Validate file size (1MB max)
-    if (file.size > 1024 * 1024) {
-      toast({
-        title: "File Too Large",
-        description: "Profile picture must be less than 1MB.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Validate file type
     if (!file.type.startsWith('image/')) {
       toast({
@@ -138,6 +129,26 @@ export default function ProfilePage() {
 
     setIsUploadingAvatar(true);
     try {
+      // Show compression progress
+      const originalSize = getFileSizeInMB(file);
+      toast({
+        title: "Compressing Image",
+        description: `Original size: ${formatFileSize(file.size)}. Compressing...`,
+      });
+
+      // Compress the image
+      const compressedFile = await compressImage(file, {
+        maxWidth: 400,
+        maxHeight: 400,
+        quality: 0.8,
+        maxSizeInMB: 0.5 // 500KB max
+      });
+
+      const compressedSize = getFileSizeInMB(compressedFile);
+      const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+
+      console.log(`Image compressed: ${formatFileSize(file.size)} → ${formatFileSize(compressedFile.size)} (${compressionRatio}% reduction)`);
+
       // Delete old avatar if exists
       if (userProfile.avatarUrl && userProfile.avatarUrl.includes('firebasestorage.googleapis.com')) {
         try {
@@ -148,10 +159,10 @@ export default function ProfilePage() {
         }
       }
 
-      // Upload new avatar
-      const fileName = `${user.uid}-${Date.now()}.${file.name.split('.').pop()}`;
+      // Upload compressed avatar
+      const fileName = `${user.uid}-${Date.now()}.jpg`;
       const avatarRef = ref(storage, `profile-pics/${fileName}`);
-      await uploadBytes(avatarRef, file);
+      await uploadBytes(avatarRef, compressedFile);
       const downloadURL = await getDownloadURL(avatarRef);
 
       // Update user profile with new avatar URL
@@ -163,7 +174,7 @@ export default function ProfilePage() {
 
       toast({
         title: "Profile Picture Updated",
-        description: "Your profile picture has been successfully updated.",
+        description: `Image compressed and uploaded successfully! Size reduced by ${compressionRatio}%.`,
       });
 
       // Refresh the page to show new avatar
@@ -232,26 +243,37 @@ export default function ProfilePage() {
     setShowCameraModal(false);
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current) {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
       if (ctx) {
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
+        // Set canvas size to a reasonable resolution for profile pictures
+        const maxSize = 800;
+        let { videoWidth, videoHeight } = videoRef.current;
+        
+        // Scale down if too large
+        if (videoWidth > maxSize || videoHeight > maxSize) {
+          const ratio = Math.min(maxSize / videoWidth, maxSize / videoHeight);
+          videoWidth = videoWidth * ratio;
+          videoHeight = videoHeight * ratio;
+        }
+        
+        canvas.width = videoWidth;
+        canvas.height = videoHeight;
         
         // Draw video frame to canvas
-        ctx.drawImage(videoRef.current, 0, 0);
+        ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
         
-        // Convert canvas to blob
-        canvas.toBlob((blob) => {
+        // Convert canvas to blob with good quality
+        canvas.toBlob(async (blob) => {
           if (blob) {
             const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-            handleAvatarUpload(file);
+            await handleAvatarUpload(file);
             stopCamera();
           }
-        }, 'image/jpeg', 0.8);
+        }, 'image/jpeg', 0.9);
       }
     }
   };
@@ -271,33 +293,29 @@ export default function ProfilePage() {
     
     if (confirm("Are you sure you want to request a refund? This will notify administrators.")) {
       try {
-        // Call the refund request API endpoint
-        const response = await fetch('/api/refund-request', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+        // Create notification directly in Firestore
+        await addDoc(collection(db, 'notifications'), {
+          type: 'refund_request',
+          userEmail: user.email,
+          userName: userProfile.name,
+          message: `Refund request: ${reason.trim()}`,
+          additionalData: {
+            refundReason: reason.trim(),
+            userId: user.uid
           },
-          body: JSON.stringify({
-            userId: user.uid,
-            userEmail: user.email,
-            userName: userProfile.name,
-            refundReason: reason.trim()
-          })
+          timestamp: new Date(),
+          status: 'pending',
+          adminNotified: false,
+          refundStatus: 'pending'
         });
 
-        const result = await response.json();
-
-        if (result.success) {
-          toast({
-            title: "Refund Request Sent",
-            description: "Your refund request has been sent to administrators.",
-          });
-          
-          // Refresh the refund requests list
-          fetchRefundRequests();
-        } else {
-          throw new Error(result.error || 'Failed to submit refund request');
-        }
+        toast({
+          title: "Refund Request Submitted",
+          description: "Your refund request has been submitted and administrators have been notified.",
+        });
+        
+        // Refresh the refund requests list
+        fetchRefundRequests();
       } catch (error) {
         console.error('Error creating refund request:', error);
         toast({

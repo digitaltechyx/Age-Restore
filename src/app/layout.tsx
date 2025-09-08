@@ -40,13 +40,13 @@ export default function RootLayout({
         {/* Favicon */}
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
       </head>
-                   <body className="font-body antialiased">
-               <AuthProvider>
-                 {children}
-                 <Toaster />
-                 <WhatsAppFloat />
-               </AuthProvider>
-             </body>
+      <body className="font-body antialiased">
+              <AuthProvider>
+                {children}
+                <Toaster />
+                <WhatsAppFloat />
+              </AuthProvider>
+      </body>
     </html>
   );
 }

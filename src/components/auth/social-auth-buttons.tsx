@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -14,29 +14,62 @@ interface SocialAuthButtonsProps {
 
 export function SocialAuthButtons({ mode, onSuccess }: SocialAuthButtonsProps) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const { loginWithGoogle, isAdmin } = useAuth();
+  const [waitingForAdminCheck, setWaitingForAdminCheck] = useState(false);
+  const { loginWithGoogle, isAdmin, user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+
+  // Effect to handle admin state change after Google login
+  useEffect(() => {
+    if (waitingForAdminCheck && user && isAdmin) {
+      console.log('✅ Admin state detected after Google login, redirecting to admin dashboard');
+      router.push('/admin');
+      setWaitingForAdminCheck(false);
+      setIsGoogleLoading(false);
+    }
+  }, [waitingForAdminCheck, user, isAdmin, router]);
 
   const handleGoogleAuth = async () => {
     setIsGoogleLoading(true);
     try {
       const result = await loginWithGoogle();
+      console.log('Google login completed:', { 
+        email: result?.user?.email, 
+        uid: result?.user?.uid,
+        displayName: result?.user?.displayName 
+      });
+      
       toast({
         title: "Success!",
         description: `Welcome! You've successfully ${mode === 'login' ? 'logged in' : 'signed up'} with Gmail.`,
       });
       onSuccess?.();
       
-      // Check if this is an admin user by email
-      const isAdminUser = result?.user?.email === 'digitaltechyx@gmail.com';
+      // Check if this is admin email and redirect immediately
+      const userEmail = result?.user?.email;
+      console.log('Checking admin email:', { userEmail, isAdminEmail: userEmail === 'digitaltechyx@gmail.com' });
       
-      // Redirect based on admin status
-      if (isAdminUser) {
+      if (userEmail === 'digitaltechyx@gmail.com') {
+        console.log('✅ Admin Google login detected, redirecting to admin dashboard immediately');
         router.push('/admin');
-      } else {
-        router.push('/dashboard');
+        setIsGoogleLoading(false);
+        return;
       }
+      
+      // For regular users, wait for auth state to update
+      console.log('Regular user detected, waiting for auth state update...');
+      setWaitingForAdminCheck(true);
+      
+      // Fallback timeout in case admin state doesn't update
+      setTimeout(() => {
+        if (waitingForAdminCheck) {
+          console.log('Google login - timeout reached, redirecting to user dashboard');
+          router.push('/dashboard');
+          setWaitingForAdminCheck(false);
+          setIsGoogleLoading(false);
+        }
+      }, 2000);
+      
     } catch (error: any) {
       console.error("Google auth error:", error);
       

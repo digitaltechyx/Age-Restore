@@ -44,13 +44,26 @@ export function LoginForm() {
   // Effect to handle redirect after login and auth state update
   useEffect(() => {
     if (pendingRedirect && user && loginEmail) {
+      console.log('Login redirect check:', { loginEmail, isAdmin, user: user.email });
+      
+      // For admin users, redirect immediately based on email
       if (loginEmail === 'digitaltechyx@gmail.com') {
+        console.log('Admin email detected, redirecting to admin dashboard immediately');
         router.push("/admin");
-      } else {
-        router.push("/dashboard");
+        setPendingRedirect(false);
+        setIsLoading(false);
+        return;
       }
-      setPendingRedirect(false);
-      setIsLoading(false);
+      
+      // For regular users, wait for auth state to update
+      const timeoutId = setTimeout(() => {
+        console.log('Redirecting regular user:', { loginEmail, isAdmin });
+        router.push("/dashboard");
+        setPendingRedirect(false);
+        setIsLoading(false);
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
     }
   }, [pendingRedirect, user, isAdmin, loginEmail, router]);
   
@@ -75,6 +88,14 @@ export function LoginForm() {
       // Store the login email and set pending redirect
       setLoginEmail(values.email);
       setPendingRedirect(true);
+      
+      // For admin users, redirect immediately without waiting
+      if (values.email === 'digitaltechyx@gmail.com') {
+        console.log('Admin login detected, redirecting immediately');
+        router.push("/admin");
+        setIsLoading(false);
+        return;
+      }
       
     } catch (error: any) {
       console.error("Login error:", error);

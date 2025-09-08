@@ -4,9 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { EmojiPicker } from "@/components/emoji-picker";
 import { UploadCloud, Zap, CheckCircle, AlertCircle, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,35 +14,37 @@ import { storage, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { 
   compressImage, 
-  getOptimalCompressionOptions, 
-  formatFileSize, 
-  isValidImageType,
-  getCompressionPreview,
-  type CompressionResult 
-} from "@/lib/imageCompression";
+  getFileSizeInMB, 
+  formatFileSize,
+  isValidImageType
+} from "@/lib/image-compression";
 
 export default function UploadPage() {
   const [isUploadedToday, setIsUploadedToday] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [compressedFile, setCompressedFile] = useState<File | null>(null);
-  const [compressionResult, setCompressionResult] = useState<CompressionResult | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionStats, setCompressionStats] = useState<{
+    originalSize: number;
+    compressedSize: number;
+    compressionRatio: number;
+  } | null>(null);
   const [totalImages, setTotalImages] = useState(0);
+  const [currentDay, setCurrentDay] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
-  const [moodText, setMoodText] = useState("");
-  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const { toast } = useToast();
   const { user, userProfile } = useAuth();
   const router = useRouter();
   
   const totalDays = 30;
-  const progressPercentage = (totalImages / totalDays) * 100;
+  const progressPercentage = Math.min((currentDay / totalDays) * 100, 100);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !userProfile) return;
     
     const checkTodayUpload = async () => {
       const today = new Date().toISOString().split('T')[0];
@@ -66,13 +66,22 @@ export default function UploadPage() {
         );
         const allImagesSnapshot = await getDocs(allImagesQuery);
         setTotalImages(allImagesSnapshot.size);
+        
+        // Calculate current day based on journey start date
+        const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
+        const todayDate = new Date();
+        const timeDiff = todayDate.getTime() - approvalDate.getTime();
+        const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because Day 1 is approval date
+        const currentDayNumber = Math.min(Math.max(daysDiff, 1), 30); // Clamp between 1 and 30
+        setCurrentDay(currentDayNumber);
+        
       } catch (error) {
         console.error('Error checking today upload:', error);
       }
     };
 
     checkTodayUpload();
-  }, [user]);
+  }, [user, userProfile]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -90,7 +99,7 @@ export default function UploadPage() {
       
       setSelectedFile(file);
       setCompressedFile(null);
-      setCompressionResult(null);
+      setCompressionStats(null);
       
       // Auto-compress the image
       await compressSelectedFile(file);
@@ -209,7 +218,7 @@ export default function UploadPage() {
     
     setSelectedFile(file);
     setCompressedFile(null);
-    setCompressionResult(null);
+    setCompressionStats(null);
     
     // Auto-compress the image
     await compressSelectedFile(file);
@@ -219,31 +228,38 @@ export default function UploadPage() {
     setIsCompressing(true);
     
     try {
-      const options = getOptimalCompressionOptions(file);
-      const result = await compressImage(file, options);
+      // Compress the image using our new utility
+      const compressedFile = await compressImage(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.8,
+        maxSizeInMB: 1.0 // 1MB max for daily photos
+      });
       
-      setCompressionResult(result);
-      setCompressedFile(result.compressedFile);
+      const originalSize = file.size;
+      const compressedSize = compressedFile.size;
+      const compressionRatio = ((originalSize - compressedSize) / originalSize) * 100;
       
-      if (result.success) {
-        toast({
-          title: "Image Compressed",
-          description: `File size reduced by ${Math.round(result.compressionRatio)}% (${formatFileSize(result.originalSize)} → ${formatFileSize(result.compressedSize)})`,
-        });
-      } else {
-        toast({
-          title: "Compression Warning",
-          description: "Could not compress image, using original file.",
-          variant: "destructive",
-        });
-      }
+      // Update state
+      setCompressionStats({
+        originalSize,
+        compressedSize,
+        compressionRatio
+      });
+      setCompressedFile(compressedFile);
+      
+      toast({
+        title: "Image Compressed",
+        description: `File size reduced by ${Math.round(compressionRatio)}% (${formatFileSize(originalSize)} → ${formatFileSize(compressedSize)})`,
+      });
     } catch (error) {
       console.error('Compression error:', error);
       toast({
         title: "Compression Error",
-        description: "Failed to compress image. Please try a different file.",
+        description: "Failed to compress image. Using original file.",
         variant: "destructive",
       });
+      setCompressedFile(file);
     } finally {
       setIsCompressing(false);
     }
@@ -277,10 +293,10 @@ export default function UploadPage() {
       return;
     }
 
-    if (totalImages >= 30) {
+    if (currentDay > 30) {
       toast({
-        title: "Upload limit reached",
-        description: "You have reached the maximum of 30 photos for your journey.",
+        title: "Journey completed",
+        description: "Congratulations! You have completed your 30-day journey.",
         variant: "destructive",
       });
       return;
@@ -340,24 +356,22 @@ export default function UploadPage() {
               createdAt: Timestamp.now(),
               fileName: fileToUpload.name,
               filePath: fileName,
-              moodText: moodText.trim() || null, // Save mood text, or null if empty
-              moodEmoji: selectedEmoji // Save selected emoji
+              moodEmoji: selectedEmoji
             });
 
             setIsUploadedToday(true);
             setTotalImages(prev => prev + 1);
             setSelectedFile(null);
             setCompressedFile(null);
-            setCompressionResult(null);
-            setMoodText("");
+            setCompressionStats(null);
             setSelectedEmoji(null);
             
-            const compressionMessage = compressionResult ? 
-              ` (compressed from ${formatFileSize(compressionResult.originalSize)})` : '';
+            const compressionMessage = compressionStats ? 
+              ` (compressed from ${formatFileSize(compressionStats.originalSize)})` : '';
             
             toast({
               title: "Upload Successful!",
-              description: `Photo for Day ${totalImages + 1} has been uploaded${compressionMessage}.`,
+              description: `Photo for Day ${currentDay} has been uploaded${compressionMessage}.`,
             });
 
             // Reset file input
@@ -402,14 +416,14 @@ export default function UploadPage() {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline">Your 30-Day Progress</CardTitle>
-          <CardDescription>Day {totalImages} of {totalDays}</CardDescription>
+          <CardDescription>Day {currentDay} of {totalDays}</CardDescription>
         </CardHeader>
         <CardContent>
           <Progress value={progressPercentage} className="w-full" />
         </CardContent>
       </Card>
 
-      {compressionResult && (
+      {compressionStats && (
         <Card className="border-green-200 bg-green-50">
           <CardHeader>
             <CardTitle className="font-headline text-green-800 flex items-center gap-2">
@@ -424,19 +438,19 @@ export default function UploadPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Original Size</p>
-                <p className="font-medium">{formatFileSize(compressionResult.originalSize)}</p>
+                <p className="font-medium">{formatFileSize(compressionStats.originalSize)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Compressed Size</p>
-                <p className="font-medium text-green-600">{formatFileSize(compressionResult.compressedSize)}</p>
+                <p className="font-medium text-green-600">{formatFileSize(compressionStats.compressedSize)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Size Reduction</p>
-                <p className="font-medium text-green-600">{Math.round(compressionResult.compressionRatio)}%</p>
+                <p className="font-medium text-green-600">{Math.round(compressionStats.compressionRatio)}%</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Space Saved</p>
-                <p className="font-medium text-green-600">{formatFileSize(compressionResult.originalSize - compressionResult.compressedSize)}</p>
+                <p className="font-medium text-green-600">{formatFileSize(compressionStats.originalSize - compressionStats.compressedSize)}</p>
               </div>
             </div>
           </CardContent>
@@ -474,12 +488,12 @@ export default function UploadPage() {
                         Original: {formatFileSize(selectedFile.size)}
                       {(selectedFile.size / 1024 / 1024) > 1 && ' (Too large!)'}
                     </p>
-                      {compressionResult && (
+                      {compressionStats && (
                         <div className="flex items-center gap-1">
                           <CheckCircle className="h-3 w-3 text-green-500" />
                           <p className="text-xs text-green-600">
-                            Compressed: {formatFileSize(compressionResult.compressedSize)} 
-                            ({Math.round(compressionResult.compressionRatio)}% smaller)
+                            Compressed: {formatFileSize(compressionStats.compressedSize)} 
+                            ({Math.round(compressionStats.compressionRatio)}% smaller)
                           </p>
                         </div>
                       )}
@@ -518,33 +532,31 @@ export default function UploadPage() {
             </Button>
           </div>
 
-          {/* Mood/Feeling Input */}
-          <div className="space-y-4">
-            <EmojiPicker
-              selectedEmoji={selectedEmoji}
-              onEmojiSelect={setSelectedEmoji}
-              className="border-2 border-dashed border-muted-foreground/25"
-            />
-            
-            {/* Optional Text Input */}
-            <div className="space-y-2">
-              <label htmlFor="mood-text" className="text-sm font-medium">
-                Additional thoughts <span className="text-muted-foreground">(Optional)</span>
-              </label>
-              <Textarea
-                id="mood-text"
-                placeholder="Add more details about your day or feelings..."
-                value={moodText}
-                onChange={(e) => setMoodText(e.target.value)}
-                className="min-h-[80px] resize-none"
-                disabled={isUploadedToday}
-                maxLength={300}
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Optional: Add more context to your mood</span>
-                <span>{moodText.length}/300</span>
-              </div>
+          {/* Simple Emoji Picker */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">How are you feeling today? (Optional)</label>
+            <div className="flex gap-2 justify-center">
+              {['😊', '😢', '😴', '😤', '😍'].map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => setSelectedEmoji(selectedEmoji === emoji ? null : emoji)}
+                  className={`text-2xl p-2 rounded-lg border-2 transition-all hover:scale-110 ${
+                    selectedEmoji === emoji
+                      ? 'border-primary bg-primary/10'
+                      : 'border-muted-foreground/25 hover:border-primary/50'
+                  }`}
+                  disabled={isUploadedToday}
+                >
+                  {emoji}
+                </button>
+              ))}
             </div>
+            {selectedEmoji && (
+              <p className="text-sm text-muted-foreground text-center">
+                Selected: {selectedEmoji}
+              </p>
+            )}
           </div>
 
           {uploadProgress !== null && uploadProgress < 100 && (

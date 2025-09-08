@@ -14,7 +14,6 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider, facebookProvider } from '@/lib/firebase';
 import { User } from '@/lib/types';
 import { getAuthErrorMessage } from '@/lib/authErrors';
-import { sendAdminNewUserNotification, sendUserWelcomeEmail } from '@/lib/email-utils';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -22,7 +21,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<{ user: FirebaseUser }>;
   loginWithFacebook: () => Promise<void>;
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -61,7 +60,44 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
             setUserProfile(userData);
-            setIsAdmin(userData.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL || userData.email === 'digitaltechyx@gmail.com');
+            // Check if user is admin by email
+            const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'digitaltechyx@gmail.com';
+            const isAdminUser = userData.email === adminEmail || userData.email === 'digitaltechyx@gmail.com';
+            console.log('Admin check from Firestore:', { userEmail: userData.email, adminEmail, isAdminUser });
+            console.log('Setting isAdmin to:', isAdminUser);
+            setIsAdmin(isAdminUser);
+          } else {
+            // If no user profile exists, check by email directly
+            const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'digitaltechyx@gmail.com';
+            const isAdminUser = firebaseUser.email === adminEmail || firebaseUser.email === 'digitaltechyx@gmail.com';
+            console.log('Admin check from Firebase user:', { userEmail: firebaseUser.email, adminEmail, isAdminUser });
+            setIsAdmin(isAdminUser);
+            
+            // If this is an admin user, create their profile
+            if (isAdminUser) {
+              console.log('Creating admin profile for:', firebaseUser.email);
+              const adminProfile: User = {
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || 'Admin User',
+                email: firebaseUser.email || '',
+                avatarUrl: firebaseUser.photoURL || '',
+                status: 'approved',
+                registrationDate: new Date().toISOString().split('T')[0],
+                gallery: []
+              };
+              
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), {
+                  ...adminProfile,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+                });
+                setUserProfile(adminProfile);
+                console.log('Admin profile created successfully');
+              } catch (error) {
+                console.error('Error creating admin profile:', error);
+              }
+            }
           }
         } catch (error) {
           console.error('Error fetching user profile:', error);
@@ -81,12 +117,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       
-      // Immediately check if this is an admin login
-      if (email === 'digitaltechyx@gmail.com') {
-        setIsAdmin(true);
-      }
-      
-      return result;
+      // The admin state will be set by onAuthStateChanged when user profile is loaded
+      // Don't return the result, just complete the function
     } catch (error: any) {
       // Convert Firebase error to user-friendly error
       const userFriendlyMessage = getAuthErrorMessage(error);
@@ -120,19 +152,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       setUserProfile(userProfile);
       
-      // Send email notifications
-      try {
-        // Send admin notification
-        await sendAdminNewUserNotification(name, email);
-        
-        // Send welcome email to user
-        await sendUserWelcomeEmail(email, name);
-      } catch (emailError) {
-        console.error('Email notification error:', emailError);
-        // Don't throw error for email failures, just log them
-      }
-      
-      return result;
+      // Don't return the result, just complete the function
     } catch (error: any) {
       // Convert Firebase error to user-friendly error
       const userFriendlyMessage = getAuthErrorMessage(error);
@@ -143,11 +163,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const loginWithGoogle = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      console.log('Google login result:', { email: result.user.email, uid: result.user.uid });
       
-      // Check if this is an admin login
-      if (result.user.email === 'digitaltechyx@gmail.com') {
-        setIsAdmin(true);
-      }
+      // Admin state will be set by onAuthStateChanged when user profile is loaded
       
       // Check if user profile exists, if not create one
       const userDoc = await getDoc(doc(db, 'users', result.user.uid));
@@ -172,23 +190,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         });
         
         setUserProfile(userProfile);
-        
-        // Send email notifications for new Google users (non-admin)
-        if (!isAdminUser) {
-          try {
-            // Send admin notification
-            await sendAdminNewUserNotification(userProfile.name, userProfile.email);
-            
-            // Send welcome email to user
-            await sendUserWelcomeEmail(userProfile.email, userProfile.name);
-          } catch (emailError) {
-            console.error('Email notification error:', emailError);
-            // Don't throw error for email failures, just log them
-          }
-        }
       }
       
-      return result;
+      // Return the result so we can access user email for immediate redirect
+      return { user: result.user };
     } catch (error: any) {
       // Handle specific popup closed error
       if (error.code === 'auth/popup-closed-by-user') {
@@ -204,10 +209,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       const result = await signInWithPopup(auth, facebookProvider);
       
-      // Check if this is an admin login
-      if (result.user.email === 'digitaltechyx@gmail.com') {
-        setIsAdmin(true);
-      }
+      // Admin state will be set by onAuthStateChanged when user profile is loaded
       
       // Check if user profile exists, if not create one
       const userDoc = await getDoc(doc(db, 'users', result.user.uid));
@@ -231,7 +233,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setUserProfile(userProfile);
       }
       
-      return result;
+      // Don't return the result, just complete the function
     } catch (error: any) {
       const userFriendlyMessage = getAuthErrorMessage(error);
       throw new Error(userFriendlyMessage);

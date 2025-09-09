@@ -61,7 +61,7 @@ export function LoginForm() {
         router.push("/dashboard");
         setPendingRedirect(false);
         setIsLoading(false);
-      }, 500);
+      }, 1000);
 
       return () => clearTimeout(timeoutId);
     }
@@ -88,14 +88,6 @@ export function LoginForm() {
       // Store the login email and set pending redirect
       setLoginEmail(values.email);
       setPendingRedirect(true);
-      
-      // For admin users, redirect immediately without waiting
-      if (values.email === 'digitaltechyx@gmail.com') {
-        console.log('Admin login detected, redirecting immediately');
-        router.push("/admin");
-        setIsLoading(false);
-        return;
-      }
       
     } catch (error: any) {
       console.error("Login error:", error);

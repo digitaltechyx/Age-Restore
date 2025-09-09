@@ -20,12 +20,16 @@ export function ProtectedRoute({
 
   useEffect(() => {
     if (!loading) {
+      console.log('ProtectedRoute check:', { user: !!user, isAdmin, requireAdmin, userProfile: userProfile?.email });
+      
       if (!user) {
+        console.log('No user, redirecting to login');
         router.push('/login');
         return;
       }
 
       if (requireAdmin && !isAdmin) {
+        console.log('Admin required but user is not admin, redirecting to dashboard');
         router.push('/dashboard');
         return;
       }

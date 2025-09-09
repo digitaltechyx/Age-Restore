@@ -7,6 +7,7 @@ import { WhatsAppFloat } from '@/components/whatsapp-float';
 export const metadata: Metadata = {
   title: 'Age Restore - Bring Back Confidence',
   description: 'Capture Your 30-Day Journey with Age Restore - A beautiful photo journaling application for your transformation',
+  // Updated to fix redirect loop issues
   icons: {
     icon: [
       { url: '/logo.avif', sizes: '40x40', type: 'image/avif' },

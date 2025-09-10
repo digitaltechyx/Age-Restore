@@ -80,10 +80,19 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ user
           const today = new Date();
           
           // Get account approval date from user profile
-          const approvalDate = userData?.approvedAt ? new Date(userData.approvedAt) : new Date();
+          let journeyStartDate: Date;
           
-          // Journey starts from approval date (Day 1 = approval date)
-          const journeyStartDate = new Date(approvalDate);
+          if (userData?.approvedAt) {
+            // New users: use approval date
+            journeyStartDate = new Date(userData.approvedAt);
+          } else if (sortedGallery.length > 0) {
+            // Existing users: use date of first upload as journey start
+            const firstUpload = sortedGallery[0];
+            journeyStartDate = new Date(firstUpload.uploadDate);
+          } else {
+            // Fallback: use registration date or today
+            journeyStartDate = userData?.registrationDate ? new Date(userData.registrationDate) : new Date();
+          }
           
           // Create 30 days starting from journey start - FIXED 30-DAY PERIOD
           for (let day = 1; day <= 30; day++) {
@@ -108,9 +117,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ user
             } else {
               // Missing image for this day slot
               const isPastDay = slotDate < today;
-              const isToday = slotDate.getFullYear() === today.getFullYear() &&
-                             slotDate.getMonth() === today.getMonth() &&
-                             slotDate.getDate() === today.getDate();
+              const isToday = slotDate.toDateString() === today.toDateString();
               const isFutureDay = slotDate > today;
               
               let missingMessage = '';

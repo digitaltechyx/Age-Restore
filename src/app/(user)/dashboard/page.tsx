@@ -60,15 +60,26 @@ export default function DashboardHomePage() {
         const today = new Date();
         
         // Get account approval date from user profile
-        const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
+        let journeyStartDate: Date;
         
-        // Journey starts from approval date (Day 1 = approval date)
-        const journeyStartDate = new Date(approvalDate);
+        if (userProfile?.approvedAt) {
+          // New users: use approval date
+          journeyStartDate = new Date(userProfile.approvedAt);
+        } else if (uploadedImages.length > 0) {
+          // Existing users: use date of first upload as journey start
+          const firstUpload = uploadedImages[0];
+          journeyStartDate = new Date(firstUpload.uploadDate);
+        } else {
+          // Fallback: use registration date or today
+          journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
+        }
+        
         
         // Create 30 days starting from journey start
         for (let day = 1; day <= 30; day++) {
           const currentDate = new Date(journeyStartDate);
           currentDate.setDate(journeyStartDate.getDate() + (day - 1));
+          
           
           // Find if there's an uploaded image for this day
           const uploadedImage = uploadedImages.find(img => {
@@ -87,9 +98,7 @@ export default function DashboardHomePage() {
           } else {
             // Missing image for this day
             const isPastDay = currentDate < today;
-            const isToday = currentDate.getFullYear() === today.getFullYear() &&
-                           currentDate.getMonth() === today.getMonth() &&
-                           currentDate.getDate() === today.getDate();
+            const isToday = currentDate.toDateString() === today.toDateString();
             const isFutureDay = currentDate > today;
             
             let missingMessage = '';
@@ -136,7 +145,7 @@ export default function DashboardHomePage() {
           <div className="mt-2 flex items-center gap-2 min-w-0">
             <p className="text-muted-foreground whitespace-nowrap">Your account status:</p>
           <Badge variant={userProfile?.status === 'approved' ? 'default' : 'secondary'} className={userProfile?.status === 'approved' ? 'bg-green-500 text-white' : ''}>
-            {userProfile?.status?.charAt(0).toUpperCase() + userProfile?.status?.slice(1) || 'Pending'}
+            {userProfile?.status ? userProfile.status.charAt(0).toUpperCase() + userProfile.status.slice(1) : 'Pending'}
           </Badge>
         </div>
         </div>

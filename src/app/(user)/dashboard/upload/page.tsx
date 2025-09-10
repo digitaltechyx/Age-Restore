@@ -49,8 +49,28 @@ export default function UploadPage() {
     const checkCurrentDayUpload = async () => {
       try {
         // Get account approval date - this is the FIXED start date
-        const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
-        const journeyStartDate = new Date(approvalDate);
+        let journeyStartDate: Date;
+        
+        if (userProfile?.approvedAt) {
+          // New users: use approval date
+          journeyStartDate = new Date(userProfile.approvedAt);
+        } else {
+          // For existing users without approvedAt, fetch first upload date
+          const imagesRef = collection(db, 'images');
+          const q = query(
+            imagesRef,
+            where('userId', '==', user.uid)
+          );
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const firstUpload = querySnapshot.docs[0].data();
+            journeyStartDate = new Date(firstUpload.uploadDate);
+          } else {
+            // No uploads yet, use registration date or today
+            journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
+          }
+        }
         
         // Calculate current day based on journey start date
         const todayDate = new Date();
@@ -59,24 +79,25 @@ export default function UploadPage() {
         const currentDayNumber = Math.min(Math.max(daysDiff, 1), 30); // Clamp between 1 and 30
         setCurrentDay(currentDayNumber);
         
+        
         // Calculate the slot date for the current day
         const slotDate = new Date(journeyStartDate);
         slotDate.setDate(journeyStartDate.getDate() + (currentDayNumber - 1));
         const slotDateString = slotDate.toISOString().split('T')[0];
         
         // Check if user has already uploaded for this specific day slot
-        const imagesRef = collection(db, 'images');
-        const q = query(
-          imagesRef,
+        const checkImagesRef = collection(db, 'images');
+        const checkQ = query(
+          checkImagesRef,
           where('userId', '==', user.uid),
           where('uploadDate', '==', slotDateString)
         );
-        const querySnapshot = await getDocs(q);
-        setIsUploadedToday(!querySnapshot.empty);
+        const checkQuerySnapshot = await getDocs(checkQ);
+        setIsUploadedToday(!checkQuerySnapshot.empty);
         
         // Get total images count
         const allImagesQuery = query(
-          imagesRef,
+          checkImagesRef,
           where('userId', '==', user.uid)
         );
         const allImagesSnapshot = await getDocs(allImagesQuery);
@@ -329,8 +350,29 @@ export default function UploadPage() {
 
     try {
       // Calculate the slot date for the current day (not today's date)
-      const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
-      const journeyStartDate = new Date(approvalDate);
+      let journeyStartDate: Date;
+      
+      if (userProfile?.approvedAt) {
+        // New users: use approval date
+        journeyStartDate = new Date(userProfile.approvedAt);
+      } else {
+        // For existing users without approvedAt, fetch first upload date
+        const imagesRef = collection(db, 'images');
+        const q = query(
+          imagesRef,
+          where('userId', '==', user.uid)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const firstUpload = querySnapshot.docs[0].data();
+          journeyStartDate = new Date(firstUpload.uploadDate);
+        } else {
+          // No uploads yet, use registration date or today
+          journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
+        }
+      }
+      
       const slotDate = new Date(journeyStartDate);
       slotDate.setDate(journeyStartDate.getDate() + (currentDay - 1));
       const slotDateString = slotDate.toISOString().split('T')[0];

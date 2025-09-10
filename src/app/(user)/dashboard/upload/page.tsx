@@ -12,6 +12,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, addDoc, query, where, getDocs, Timestamp } from "firebase/firestore";
 import { storage, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { 
   compressImage, 
   getFileSizeInMB, 
@@ -56,9 +57,9 @@ export default function UploadPage() {
           journeyStartDate = new Date(userProfile.approvedAt);
         } else {
           // For existing users without approvedAt, fetch first upload date
-          const imagesRef = collection(db, 'images');
-          const q = query(
-            imagesRef,
+        const imagesRef = collection(db, 'images');
+        const q = query(
+          imagesRef,
             where('userId', '==', user.uid)
           );
           const querySnapshot = await getDocs(q);
@@ -72,11 +73,23 @@ export default function UploadPage() {
           }
         }
         
-        // Calculate current day based on journey start date
+        // Calculate current day based on journey start date (same logic as gallery)
         const todayDate = new Date();
-        const timeDiff = todayDate.getTime() - journeyStartDate.getTime();
-        const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because Day 1 is approval date
-        const currentDayNumber = Math.min(Math.max(daysDiff, 1), 30); // Clamp between 1 and 30
+        const todayDateString = todayDate.toISOString().split('T')[0];
+        
+        // Find which day slot today corresponds to
+        let currentDayNumber = 1;
+        for (let day = 1; day <= 30; day++) {
+          const slotDate = new Date(journeyStartDate);
+          slotDate.setDate(journeyStartDate.getDate() + (day - 1));
+          const slotDateString = slotDate.toISOString().split('T')[0];
+          
+          if (slotDateString === todayDateString) {
+            currentDayNumber = day;
+            break;
+          }
+        }
+        
         setCurrentDay(currentDayNumber);
         
         
@@ -93,7 +106,17 @@ export default function UploadPage() {
           where('uploadDate', '==', slotDateString)
         );
         const checkQuerySnapshot = await getDocs(checkQ);
-        setIsUploadedToday(!checkQuerySnapshot.empty);
+        const hasUploadedToday = !checkQuerySnapshot.empty;
+        setIsUploadedToday(hasUploadedToday);
+        
+        // Debug logging
+        console.log('🔍 Upload Status Check:');
+        console.log('Today Date String:', todayDateString);
+        console.log('Journey Start Date:', journeyStartDate.toISOString().split('T')[0]);
+        console.log('Current Day:', currentDayNumber);
+        console.log('Slot Date String:', slotDateString);
+        console.log('Has Uploaded Today:', hasUploadedToday);
+        console.log('Query Results Count:', checkQuerySnapshot.size);
         
         // Get total images count
         const allImagesQuery = query(
@@ -110,6 +133,88 @@ export default function UploadPage() {
 
     checkCurrentDayUpload();
   }, [user, userProfile]);
+
+  // Refresh upload status when component mounts or when currentDay changes
+  useEffect(() => {
+    if (user && userProfile) {
+      const checkCurrentDayUpload = async () => {
+        try {
+          // Get account approval date - this is the FIXED start date
+          let journeyStartDate: Date;
+          
+          if (userProfile?.approvedAt) {
+            // New users: use approval date
+            journeyStartDate = new Date(userProfile.approvedAt);
+          } else {
+            // For existing users without approvedAt, fetch first upload date
+            const imagesRef = collection(db, 'images');
+            const q = query(
+              imagesRef,
+              where('userId', '==', user.uid)
+            );
+            const querySnapshot = await getDocs(q);
+            
+            if (!querySnapshot.empty) {
+              const firstUpload = querySnapshot.docs[0].data();
+              journeyStartDate = new Date(firstUpload.uploadDate);
+            } else {
+              // No uploads yet, use registration date or today
+              journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
+            }
+          }
+          
+          // Calculate current day based on journey start date (same logic as gallery)
+          const todayDate = new Date();
+          const todayDateString = todayDate.toISOString().split('T')[0];
+          
+          // Find which day slot today corresponds to
+          let currentDayNumber = 1;
+          for (let day = 1; day <= 30; day++) {
+            const slotDate = new Date(journeyStartDate);
+            slotDate.setDate(journeyStartDate.getDate() + (day - 1));
+            const slotDateString = slotDate.toISOString().split('T')[0];
+            
+            if (slotDateString === todayDateString) {
+              currentDayNumber = day;
+              break;
+            }
+          }
+          
+          setCurrentDay(currentDayNumber);
+          
+          // Calculate the slot date for the current day
+          const slotDate = new Date(journeyStartDate);
+          slotDate.setDate(journeyStartDate.getDate() + (currentDayNumber - 1));
+          const slotDateString = slotDate.toISOString().split('T')[0];
+          
+          // Check if user has already uploaded for this specific day slot
+          const checkImagesRef = collection(db, 'images');
+          const checkQ = query(
+            checkImagesRef,
+            where('userId', '==', user.uid),
+            where('uploadDate', '==', slotDateString)
+          );
+          const checkQuerySnapshot = await getDocs(checkQ);
+          const hasUploadedToday = !checkQuerySnapshot.empty;
+          setIsUploadedToday(hasUploadedToday);
+          
+          // Debug logging
+          console.log('🔄 Upload Status Refresh:');
+          console.log('Today Date String:', todayDateString);
+          console.log('Journey Start Date:', journeyStartDate.toISOString().split('T')[0]);
+          console.log('Current Day:', currentDayNumber);
+          console.log('Slot Date String:', slotDateString);
+          console.log('Has Uploaded Today:', hasUploadedToday);
+          console.log('Query Results Count:', checkQuerySnapshot.size);
+          
+        } catch (error) {
+          console.error('Error refreshing upload status:', error);
+        }
+      };
+      
+      checkCurrentDayUpload();
+    }
+  }, [currentDay]); // Refresh when currentDay changes
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -421,6 +526,11 @@ export default function UploadPage() {
             setCompressionStats(null);
             setSelectedEmoji(null);
             
+            // Debug logging
+            console.log('✅ Upload Success - State Updated:');
+            console.log('isUploadedToday set to:', true);
+            console.log('Slot Date String:', slotDateString);
+            
             const compressionMessage = compressionStats ? 
               ` (compressed from ${formatFileSize(compressionStats.originalSize)})` : '';
             
@@ -524,119 +634,148 @@ export default function UploadPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {isUploadedToday ? (
+            // Show success message when already uploaded
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle className="w-8 h-8 text-green-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-green-800 mb-2">Photo Uploaded Successfully!</h3>
+              <p className="text-muted-foreground mb-4">
+                You've already uploaded your photo for Day {currentDay}. 
+                Come back tomorrow to continue your journey!
+              </p>
+              <div className="flex gap-2">
+                <Button asChild variant="outline">
+                  <Link href="/dashboard">View Gallery</Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/dashboard">Go to Dashboard</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            // Show upload interface when not uploaded
+            <>
           <div className="flex items-center justify-center w-full">
             <label
               htmlFor="dropzone-file"
-              className={`flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-muted ${isUploadedToday ? 'cursor-not-allowed opacity-50' : ''}`}
+                  className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-muted"
             >
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
                 <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
                 <p className="mb-2 text-sm text-muted-foreground">
                   <span className="font-semibold">Click to upload</span> or drag and drop
                 </p>
-                <p className="text-xs text-muted-foreground">PNG, JPG, GIF, or WebP (Maximum file size: 1MB)</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, GIF, or WebP (Maximum file size: 1MB)</p>
                 {selectedFile && (
                   <div className="mt-2 space-y-1">
                     <p className="text-xs text-primary">{selectedFile.name}</p>
-                    <div className="space-y-1">
-                      <p className={`text-xs ${(selectedFile.size / 1024 / 1024) > 1 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        Original: {formatFileSize(selectedFile.size)}
+                        <div className="space-y-1">
+                          <p className={`text-xs ${(selectedFile.size / 1024 / 1024) > 1 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                            Original: {formatFileSize(selectedFile.size)}
                       {(selectedFile.size / 1024 / 1024) > 1 && ' (Too large!)'}
                     </p>
-                      {compressionStats && (
-                        <div className="flex items-center gap-1">
-                          <CheckCircle className="h-3 w-3 text-green-500" />
-                          <p className="text-xs text-green-600">
-                            Compressed: {formatFileSize(compressionStats.compressedSize)} 
-                            ({Math.round(compressionStats.compressionRatio)}% smaller)
-                          </p>
+                          {compressionStats && (
+                            <div className="flex items-center gap-1">
+                              <CheckCircle className="h-3 w-3 text-green-500" />
+                              <p className="text-xs text-green-600">
+                                Compressed: {formatFileSize(compressionStats.compressedSize)} 
+                                ({Math.round(compressionStats.compressionRatio)}% smaller)
+                              </p>
+                            </div>
+                          )}
+                          {isCompressing && (
+                            <div className="flex items-center gap-1">
+                              <Zap className="h-3 w-3 text-blue-500 animate-pulse" />
+                              <p className="text-xs text-blue-600">Compressing image...</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {isCompressing && (
-                        <div className="flex items-center gap-1">
-                          <Zap className="h-3 w-3 text-blue-500 animate-pulse" />
-                          <p className="text-xs text-blue-600">Compressing image...</p>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
               </div>
-              <Input 
-                id="dropzone-file" 
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
-                disabled={isUploadedToday} 
-                onChange={handleFileChange} 
-              />
+                  <Input 
+                    id="dropzone-file" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleFileChange} 
+                  />
             </label>
           </div>
 
-          {/* Camera Button */}
-          <div className="flex justify-center">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCameraClick}
-              disabled={isUploadedToday}
-              className="flex items-center gap-2"
-            >
-              <Camera className="h-4 w-4" />
-              Take Photo with Camera
-            </Button>
-          </div>
-
-          {/* Simple Emoji Picker */}
-          <div className="space-y-3">
-            <label className="text-sm font-medium">How are you feeling today? (Optional)</label>
-            <div className="flex gap-2 justify-center">
-              {['😊', '😢', '😴', '😤', '😍'].map((emoji) => (
-                <button
-                  key={emoji}
+              {/* Camera Button */}
+              <div className="flex justify-center">
+                <Button
                   type="button"
-                  onClick={() => setSelectedEmoji(selectedEmoji === emoji ? null : emoji)}
-                  className={`text-2xl p-2 rounded-lg border-2 transition-all hover:scale-110 ${
-                    selectedEmoji === emoji
-                      ? 'border-primary bg-primary/10'
-                      : 'border-muted-foreground/25 hover:border-primary/50'
-                  }`}
-                  disabled={isUploadedToday}
+                  variant="outline"
+                  onClick={handleCameraClick}
+                  className="flex items-center gap-2"
                 >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-            {selectedEmoji && (
-              <p className="text-sm text-muted-foreground text-center">
-                Selected: {selectedEmoji}
-              </p>
-            )}
-          </div>
+                  <Camera className="h-4 w-4" />
+                  Take Photo with Camera
+                </Button>
+              </div>
+            </>
+          )}
 
-          {uploadProgress !== null && uploadProgress < 100 && (
-            <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Uploading...</p>
-                <Progress value={uploadProgress} />
+          {/* Simple Emoji Picker - Only show when not uploaded */}
+          {!isUploadedToday && (
+            <div className="space-y-3">
+              <label className="text-sm font-medium">How are you feeling today? (Optional)</label>
+              <div className="flex gap-2 justify-center">
+                {['😊', '😢', '😴', '😤', '😍'].map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setSelectedEmoji(selectedEmoji === emoji ? null : emoji)}
+                    className={`text-2xl p-2 rounded-lg border-2 transition-all hover:scale-110 ${
+                      selectedEmoji === emoji
+                        ? 'border-primary bg-primary/10'
+                        : 'border-muted-foreground/25 hover:border-primary/50'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+              {selectedEmoji && (
+                <p className="text-sm text-muted-foreground text-center">
+                  Selected: {selectedEmoji}
+                </p>
+              )}
             </div>
           )}
 
-          <Button 
-            onClick={handleUpload} 
-            className="w-full" 
-            disabled={isUploadedToday || isUploading || isCompressing || !selectedFile}
-          >
-            {isCompressing ? (
-              <>
-                <Zap className="mr-2 h-4 w-4 animate-pulse" />
-                Compressing...
-              </>
-            ) : isUploading ? (
-              "Uploading..."
-            ) : (
-              "Upload Picture"
-            )}
-          </Button>
+          {/* Upload Progress and Button - Only show when not uploaded */}
+          {!isUploadedToday && (
+            <>
+              {uploadProgress !== null && uploadProgress < 100 && (
+                <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Uploading...</p>
+                    <Progress value={uploadProgress} />
+                </div>
+              )}
+
+              <Button 
+                onClick={handleUpload} 
+                className="w-full" 
+                disabled={isUploading || isCompressing || !selectedFile}
+              >
+                {isCompressing ? (
+                  <>
+                    <Zap className="mr-2 h-4 w-4 animate-pulse" />
+                    Compressing...
+                  </>
+                ) : isUploading ? (
+                  "Uploading..."
+                ) : (
+                  "Upload Picture"
+                )}
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
 

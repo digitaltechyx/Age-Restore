@@ -2,6 +2,8 @@
 
 A beautiful photo journaling application built with Next.js 15, Firebase, and modern UI components. Users can document their life journey by uploading one picture per day for 30 days, with admin approval and management features.
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/digitaltechyx/Age-Restore)
+
 ![AgeRestore Banner](https://placehold.co/800x300/A0D2EB/FFFFFF?text=AgeRestore+📸)
 
 ## ✨ Features

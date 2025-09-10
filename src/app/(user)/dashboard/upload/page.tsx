@@ -46,15 +46,30 @@ export default function UploadPage() {
   useEffect(() => {
     if (!user || !userProfile) return;
     
-    const checkTodayUpload = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      
+    const checkCurrentDayUpload = async () => {
       try {
+        // Get account approval date - this is the FIXED start date
+        const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
+        const journeyStartDate = new Date(approvalDate);
+        
+        // Calculate current day based on journey start date
+        const todayDate = new Date();
+        const timeDiff = todayDate.getTime() - journeyStartDate.getTime();
+        const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because Day 1 is approval date
+        const currentDayNumber = Math.min(Math.max(daysDiff, 1), 30); // Clamp between 1 and 30
+        setCurrentDay(currentDayNumber);
+        
+        // Calculate the slot date for the current day
+        const slotDate = new Date(journeyStartDate);
+        slotDate.setDate(journeyStartDate.getDate() + (currentDayNumber - 1));
+        const slotDateString = slotDate.toISOString().split('T')[0];
+        
+        // Check if user has already uploaded for this specific day slot
         const imagesRef = collection(db, 'images');
         const q = query(
           imagesRef,
           where('userId', '==', user.uid),
-          where('uploadDate', '==', today)
+          where('uploadDate', '==', slotDateString)
         );
         const querySnapshot = await getDocs(q);
         setIsUploadedToday(!querySnapshot.empty);
@@ -67,20 +82,12 @@ export default function UploadPage() {
         const allImagesSnapshot = await getDocs(allImagesQuery);
         setTotalImages(allImagesSnapshot.size);
         
-        // Calculate current day based on journey start date
-        const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
-        const todayDate = new Date();
-        const timeDiff = todayDate.getTime() - approvalDate.getTime();
-        const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because Day 1 is approval date
-        const currentDayNumber = Math.min(Math.max(daysDiff, 1), 30); // Clamp between 1 and 30
-        setCurrentDay(currentDayNumber);
-        
       } catch (error) {
-        console.error('Error checking today upload:', error);
+        console.error('Error checking current day upload:', error);
       }
     };
 
-    checkTodayUpload();
+    checkCurrentDayUpload();
   }, [user, userProfile]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -321,8 +328,14 @@ export default function UploadPage() {
     setUploadProgress(0);
 
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const fileName = `${user.uid}/${today}_${Date.now()}_${fileToUpload.name}`;
+      // Calculate the slot date for the current day (not today's date)
+      const approvalDate = userProfile?.approvedAt ? new Date(userProfile.approvedAt) : new Date();
+      const journeyStartDate = new Date(approvalDate);
+      const slotDate = new Date(journeyStartDate);
+      slotDate.setDate(journeyStartDate.getDate() + (currentDay - 1));
+      const slotDateString = slotDate.toISOString().split('T')[0];
+      
+      const fileName = `${user.uid}/${slotDateString}_${Date.now()}_${fileToUpload.name}`;
       const storageRef = ref(storage, `images/${fileName}`);
       
       const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
@@ -348,11 +361,11 @@ export default function UploadPage() {
           try {
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
             
-            // Save image metadata to Firestore
+            // Save image metadata to Firestore with the slot date
             await addDoc(collection(db, 'images'), {
               userId: user.uid,
               imageUrl: downloadURL,
-              uploadDate: today,
+              uploadDate: slotDateString, // Use slot date, not today's date
               createdAt: Timestamp.now(),
               fileName: fileToUpload.name,
               filePath: fileName,

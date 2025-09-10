@@ -85,40 +85,41 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ user
           // Journey starts from approval date (Day 1 = approval date)
           const journeyStartDate = new Date(approvalDate);
           
-          // Create 30 days starting from journey start
+          // Create 30 days starting from journey start - FIXED 30-DAY PERIOD
           for (let day = 1; day <= 30; day++) {
-            const currentDate = new Date(journeyStartDate);
-            currentDate.setDate(journeyStartDate.getDate() + (day - 1));
+            const slotDate = new Date(journeyStartDate);
+            slotDate.setDate(journeyStartDate.getDate() + (day - 1));
             
-            // Find if there's an uploaded image for this day
+            // Find if there's an uploaded image for this specific day slot
             const uploadedImage = sortedGallery.find(img => {
               // img.uploadDate is stored as YYYY-MM-DD string format
               const imgDateString = img.uploadDate;
-              const currentDateString = currentDate.toISOString().split('T')[0];
-              return imgDateString === currentDateString;
+              const slotDateString = slotDate.toISOString().split('T')[0];
+              return imgDateString === slotDateString;
             });
             
             if (uploadedImage) {
-              // Image exists for this day
+              // Image exists for this day slot
               adminGallery.push({
                 ...uploadedImage,
-                dayNumber: day
+                dayNumber: day,
+                isMissing: false
               });
             } else {
-              // Missing image for this day
-              const isPastDay = currentDate < today;
-              const isToday = currentDate.getFullYear() === today.getFullYear() &&
-                             currentDate.getMonth() === today.getMonth() &&
-                             currentDate.getDate() === today.getDate();
-              const isFutureDay = currentDate > today;
+              // Missing image for this day slot
+              const isPastDay = slotDate < today;
+              const isToday = slotDate.getFullYear() === today.getFullYear() &&
+                             slotDate.getMonth() === today.getMonth() &&
+                             slotDate.getDate() === today.getDate();
+              const isFutureDay = slotDate > today;
               
               let missingMessage = '';
               if (isToday) {
                 missingMessage = `Today is Day ${day} - User can upload their photo`;
               } else if (isPastDay) {
-                missingMessage = `Day ${day} - User missed uploading on ${currentDate.toLocaleDateString()}`;
+                missingMessage = `Day ${day} - User missed uploading on ${slotDate.toLocaleDateString()}`;
               } else if (isFutureDay) {
-                missingMessage = `Day ${day} - Coming up on ${currentDate.toLocaleDateString()}`;
+                missingMessage = `Day ${day} - Coming up on ${slotDate.toLocaleDateString()}`;
               } else {
                 missingMessage = `Day ${day} - No photo uploaded`;
               }
@@ -126,7 +127,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ user
               adminGallery.push({
                 id: `missing-${day}`,
                 imageUrl: '',
-                uploadDate: currentDate.toISOString(),
+                uploadDate: slotDate.toISOString(),
                 fileName: '',
                 dayNumber: day,
                 isMissing: true,

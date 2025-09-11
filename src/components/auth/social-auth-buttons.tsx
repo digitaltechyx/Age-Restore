@@ -55,20 +55,12 @@ export function SocialAuthButtons({ mode, onSuccess }: SocialAuthButtonsProps) {
         setIsGoogleLoading(false);
         return;
       }
-      
-      // For regular users, wait for auth state to update
-      console.log('Regular user detected, waiting for auth state update...');
-      setWaitingForAdminCheck(true);
-      
-      // Fallback timeout in case admin state doesn't update
-      setTimeout(() => {
-        if (waitingForAdminCheck) {
-          console.log('Google login - timeout reached, redirecting to user dashboard');
-          router.push('/dashboard');
-          setWaitingForAdminCheck(false);
-          setIsGoogleLoading(false);
-        }
-      }, 2000);
+
+      // For regular users, redirect immediately to user dashboard
+      console.log('✅ Regular Google login detected, redirecting to user dashboard');
+      router.push('/dashboard');
+      setWaitingForAdminCheck(false);
+      setIsGoogleLoading(false);
       
     } catch (error: any) {
       console.error("Google auth error:", error);

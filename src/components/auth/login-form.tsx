@@ -43,29 +43,21 @@ export function LoginForm() {
 
   // Effect to handle redirect after login and auth state update
   useEffect(() => {
-    if (pendingRedirect && user && loginEmail) {
-      console.log('Login redirect check:', { loginEmail, isAdmin, user: user.email });
-      
-      // For admin users, redirect immediately based on email
+    if (pendingRedirect && loginEmail) {
+      // Admin shortcut by email check
       if (loginEmail === 'digitaltechyx@gmail.com') {
-        console.log('Admin email detected, redirecting to admin dashboard immediately');
-        router.push("/admin");
+        router.push('/admin');
         setPendingRedirect(false);
         setIsLoading(false);
         return;
       }
-      
-      // For regular users, wait for auth state to update
-      const timeoutId = setTimeout(() => {
-        console.log('Redirecting regular user:', { loginEmail, isAdmin });
-        router.push("/dashboard");
-        setPendingRedirect(false);
-        setIsLoading(false);
-      }, 1000);
 
-      return () => clearTimeout(timeoutId);
+      // For all other users redirect to dashboard immediately on client
+      router.push('/dashboard');
+      setPendingRedirect(false);
+      setIsLoading(false);
     }
-  }, [pendingRedirect, user, isAdmin, loginEmail, router]);
+  }, [pendingRedirect, loginEmail, router]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

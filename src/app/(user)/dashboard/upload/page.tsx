@@ -46,9 +46,9 @@ export default function UploadPage() {
   const totalDays = 30;
   const progressPercentage = Math.min((currentDay / totalDays) * 100, 100);
 
-  // Function to check current day upload status - COMPLETELY REWRITTEN TO MATCH GALLERY LOGIC EXACTLY
+  // NEW LOGIC: Journey starts with first upload - COMPLETELY REWRITTEN
   const checkCurrentDayUpload = async () => {
-    console.log('🚀 NEW UPLOAD LOGIC EXECUTING - GALLERY LOGIC VERSION 3.0 - FIXED JOURNEY START -', new Date().toISOString());
+    console.log('🚀 UPLOAD PAGE: NEW LOGIC - Journey starts with first upload -', new Date().toISOString());
     if (!user || !userProfile) return;
 
     // Debounce: prevent multiple calls within 2 seconds
@@ -62,7 +62,7 @@ export default function UploadPage() {
     setIsCheckingUpload(true);
 
     try {
-      // Get all uploaded images first (same as gallery)
+      // Get all uploaded images
       const imagesRef = collection(db, 'images');
       const q = query(
         imagesRef,
@@ -75,78 +75,50 @@ export default function UploadPage() {
         uploadedImages.push({ id: doc.id, ...doc.data() });
       });
       
-      // Sort by upload date (same as gallery)
+      // Sort by upload date
       uploadedImages.sort((a, b) =>
         new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
       );
       
-      console.log('🔍 All Uploaded Images (GALLERY LOGIC):', uploadedImages.map(img => ({
-        id: img.id,
-        uploadDate: img.uploadDate,
-        dayNumber: img.dayNumber
-      })));
+      const today = new Date();
+      // Use local date instead of UTC to avoid timezone issues
+      const todayDateString = today.getFullYear() + '-' + 
+        String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(today.getDate()).padStart(2, '0');
       
-        // Calculate current day - EXACT SAME LOGIC AS GALLERY
-        const today = new Date();
-        const todayDateString = today.toISOString().split('T')[0];
-        console.log('🔍 TODAY VARIABLE DEBUG:');
-        console.log('🔍 today object:', today);
-        console.log('🔍 today.toISOString():', today.toISOString());
-        console.log('🔍 todayDateString:', todayDateString);
-
-        // Get account approval date - FIXED LOGIC FOR EXISTING USERS
-        let journeyStartDate: Date;
-
-        if (userProfile?.approvedAt) {
-          // New users: use approval date
-          journeyStartDate = new Date(userProfile.approvedAt);
-          console.log('🔍 Using approvedAt date:', journeyStartDate.toISOString().split('T')[0]);
-        } else if (uploadedImages.length > 0) {
-          // Existing users: Calculate journey start based on current day expectation
-          // If user has uploaded images, we need to determine the correct journey start date
-          // For now, let's use the first upload date minus 1 day to make today Day 2
-          const firstUpload = uploadedImages[0];
-          const firstUploadDate = new Date(firstUpload.uploadDate);
-          
-          // If first upload was today, assume journey started yesterday
-          if (firstUploadDate.toDateString() === today.toDateString()) {
-            journeyStartDate = new Date(firstUploadDate);
-            journeyStartDate.setDate(journeyStartDate.getDate() - 1);
-            console.log('🔍 First upload was today, using yesterday as journey start:', journeyStartDate.toISOString().split('T')[0]);
-          } else {
-            // If first upload was not today, use that date as journey start
-            journeyStartDate = firstUploadDate;
-            console.log('🔍 First upload was NOT today, using first upload date as journey start:', journeyStartDate.toISOString().split('T')[0]);
-            console.log('🔍 First upload date:', firstUploadDate.toISOString().split('T')[0]);
-            console.log('🔍 Today date:', today.toISOString().split('T')[0]);
-          }
-        } else {
-          // Fallback: use registration date or today
-          journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
-          console.log('🔍 Using fallback date:', journeyStartDate.toISOString().split('T')[0]);
-        }
+      // Journey starts when user uploads their first picture
+      let journeyStartDate: Date;
       
+      if (uploadedImages.length > 0) {
+        // Use the date of the first uploaded image as journey start
+        const firstUpload = uploadedImages[0];
+        journeyStartDate = new Date(firstUpload.uploadDate);
+        console.log('🔍 UPLOAD: Journey started with first upload on:', journeyStartDate.toISOString().split('T')[0]);
+      } else {
+        // No uploads yet - journey hasn't started, today is Day 1
+        journeyStartDate = new Date();
+        console.log('🔍 UPLOAD: No uploads yet - today will be Day 1 when first upload happens');
+      }
+      
+      // Calculate current day - EXACT SAME LOGIC AS GALLERY
       let currentDayNumber = 1;
       let foundToday = false;
       
-      // Find which day today corresponds to in the 30-day journey (same as gallery)
-      console.log('🔍 DAY CALCULATION DEBUG:');
-      console.log('🔍 todayDateString before loop:', todayDateString);
-      console.log('🔍 journeyStartDate:', journeyStartDate.toISOString().split('T')[0]);
-      
+      // Find which day today corresponds to in the 30-day journey
       for (let day = 1; day <= 30; day++) {
         const currentDate = new Date(journeyStartDate);
         currentDate.setDate(journeyStartDate.getDate() + (day - 1));
-        const currentDateString = currentDate.toISOString().split('T')[0];
+        // Use local date instead of UTC to avoid timezone issues
+        const currentDateString = currentDate.getFullYear() + '-' + 
+          String(currentDate.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(currentDate.getDate()).padStart(2, '0');
         
-        if (day <= 3) { // Debug first 3 days
-          console.log(`🔍 Day ${day}: ${currentDateString} vs ${todayDateString} (match: ${currentDateString === todayDateString})`);
-        }
+        console.log(`🔍 UPLOAD: Checking Day ${day} (${currentDateString}) vs Today (${todayDateString})`);
         
         if (currentDateString === todayDateString) {
           currentDayNumber = day;
           foundToday = true;
-          console.log(`🔍 FOUND TODAY! Day ${day} matches ${todayDateString}`);
+          console.log(`🔍 UPLOAD: FOUND TODAY! Day ${day} matches today`);
           break;
         }
       }
@@ -156,20 +128,21 @@ export default function UploadPage() {
         currentDayNumber = 31; // Beyond the 30-day journey
         setCurrentDay(currentDayNumber);
         setIsUploadedToday(true); // No upload allowed beyond day 30
-        console.log('🔍 Today is beyond 30-day journey');
+        console.log('🔍 UPLOAD: Today is beyond 30-day journey');
         return;
       }
       
       setCurrentDay(currentDayNumber);
       
-      // Check if user has already uploaded for today's slot - EXACT SAME LOGIC AS GALLERY
-      console.log('🔍 FINAL DEBUG - currentDayNumber:', currentDayNumber);
+      // Check if user has already uploaded for today's slot
       const currentDate = new Date(journeyStartDate);
       currentDate.setDate(journeyStartDate.getDate() + (currentDayNumber - 1));
-      const currentDateString = currentDate.toISOString().split('T')[0];
-      console.log('🔍 FINAL DEBUG - currentDateString:', currentDateString);
+      // Use local date instead of UTC to avoid timezone issues
+      const currentDateString = currentDate.getFullYear() + '-' + 
+        String(currentDate.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(currentDate.getDate()).padStart(2, '0');
       
-      // Find if there's an uploaded image for this day (same as gallery)
+      // Find if there's an uploaded image for this day
       const uploadedImage = uploadedImages.find(img => {
         const imgDateString = img.uploadDate;
         return imgDateString === currentDateString;
@@ -181,26 +154,13 @@ export default function UploadPage() {
       // Get total images count
       setTotalImages(uploadedImages.length);
       
-      // Debug logging
-      console.log('🔍 Upload Status Check (GALLERY LOGIC):');
+      console.log('🔍 UPLOAD: Final Status Check:');
       console.log('Today Date String:', todayDateString);
       console.log('Journey Start Date:', journeyStartDate.toISOString().split('T')[0]);
-      console.log('User Profile Approved At:', userProfile?.approvedAt);
-      console.log('Current Day:', currentDayNumber);
-      console.log('Found Today:', foundToday);
+      console.log('Current Day Number:', currentDayNumber);
       console.log('Current Date String:', currentDateString);
       console.log('Has Uploaded Today:', hasUploadedToday);
       console.log('Uploaded Image Found:', !!uploadedImage);
-      
-      // Additional debugging - show all 30 day slots
-      console.log('📅 All 30 Day Slots (GALLERY LOGIC):');
-      for (let day = 1; day <= 30; day++) {
-        const testSlotDate = new Date(journeyStartDate);
-        testSlotDate.setDate(journeyStartDate.getDate() + (day - 1));
-        const testSlotDateString = testSlotDate.toISOString().split('T')[0];
-        const isToday = testSlotDateString === todayDateString;
-        console.log(`Day ${day}: ${testSlotDateString} ${isToday ? '← TODAY' : ''}`);
-      }
 
     } catch (error) {
       console.error('Error checking current day upload:', error);
@@ -467,28 +427,33 @@ export default function UploadPage() {
     setUploadProgress(0);
 
     try {
-      // Calculate the slot date for the current day (not today's date)
+      // Calculate the slot date for the current day - Journey starts with first upload
       let journeyStartDate: Date;
       
-      if (userProfile?.approvedAt) {
-        // New users: use approval date
-        journeyStartDate = new Date(userProfile.approvedAt);
-      } else {
-        // For existing users without approvedAt, fetch first upload date
-        const imagesRef = collection(db, 'images');
-        const q = query(
-          imagesRef,
-          where('userId', '==', user.uid)
-        );
-        const querySnapshot = await getDocs(q);
+      // Get all uploaded images to find journey start
+      const imagesRef = collection(db, 'images');
+      const q = query(
+        imagesRef,
+        where('userId', '==', user.uid)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        // Journey started with first upload
+        const uploadedImages: any[] = [];
+        querySnapshot.forEach((doc) => {
+          uploadedImages.push({ id: doc.id, ...doc.data() });
+        });
         
-        if (!querySnapshot.empty) {
-          const firstUpload = querySnapshot.docs[0].data();
-          journeyStartDate = new Date(firstUpload.uploadDate);
-        } else {
-          // No uploads yet, use registration date or today
-          journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
-        }
+        // Sort by upload date and get first upload
+        uploadedImages.sort((a, b) =>
+          new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
+        );
+        
+        journeyStartDate = new Date(uploadedImages[0].uploadDate);
+      } else {
+        // This is the first upload - journey starts today
+        journeyStartDate = new Date();
       }
       
       const slotDate = new Date(journeyStartDate);
@@ -585,7 +550,7 @@ export default function UploadPage() {
   return (
     <div className="space-y-6 sm:space-y-8 max-w-2xl mx-auto px-4 sm:px-0">
       <div>
-                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Upload Your Photo (FINAL DEBUG)</h1>
+                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Upload Your Photo</h1>
         <p className="text-sm sm:text-base text-muted-foreground">
           Capture your moment for today. You can upload one picture per day.
         </p>

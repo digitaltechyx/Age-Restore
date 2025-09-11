@@ -55,46 +55,40 @@ export default function DashboardHomePage() {
           new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime()
         );
         
-        // Create a 30-day sequential grid based on account approval date
+        // NEW LOGIC: Journey starts with first upload
         const sequentialGrid: GalleryImage[] = [];
         const today = new Date();
+        // Use local date instead of UTC to avoid timezone issues
+        const todayDateString = today.getFullYear() + '-' + 
+          String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(today.getDate()).padStart(2, '0');
         
-        // Get account approval date from user profile
+        // Journey starts when user uploads their first picture
         let journeyStartDate: Date;
         
-        if (userProfile?.approvedAt) {
-          // New users: use approval date
-          journeyStartDate = new Date(userProfile.approvedAt);
-        } else if (uploadedImages.length > 0) {
-          // Existing users: Calculate journey start based on current day expectation
+        if (uploadedImages.length > 0) {
+          // Use the date of the first uploaded image as journey start
           const firstUpload = uploadedImages[0];
-          const firstUploadDate = new Date(firstUpload.uploadDate);
-          
-          // If first upload was today, assume journey started yesterday
-          if (firstUploadDate.toDateString() === today.toDateString()) {
-            journeyStartDate = new Date(firstUploadDate);
-            journeyStartDate.setDate(journeyStartDate.getDate() - 1);
-          } else {
-            // If first upload was not today, use that date as journey start
-            journeyStartDate = firstUploadDate;
-          }
+          journeyStartDate = new Date(firstUpload.uploadDate);
+          console.log('🔍 GALLERY: Journey started with first upload on:', journeyStartDate.toISOString().split('T')[0]);
         } else {
-          // Fallback: use registration date or today
-          journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();
+          // No uploads yet - journey hasn't started
+          journeyStartDate = new Date();
+          console.log('🔍 GALLERY: No uploads yet - journey will start today');
         }
-        
         
         // Create 30 days starting from journey start
         for (let day = 1; day <= 30; day++) {
           const currentDate = new Date(journeyStartDate);
           currentDate.setDate(journeyStartDate.getDate() + (day - 1));
-          
+          // Use local date instead of UTC to avoid timezone issues
+          const currentDateString = currentDate.getFullYear() + '-' + 
+            String(currentDate.getMonth() + 1).padStart(2, '0') + '-' + 
+            String(currentDate.getDate()).padStart(2, '0');
           
           // Find if there's an uploaded image for this day
           const uploadedImage = uploadedImages.find(img => {
-            // img.uploadDate is stored as YYYY-MM-DD string format
             const imgDateString = img.uploadDate;
-            const currentDateString = currentDate.toISOString().split('T')[0];
             return imgDateString === currentDateString;
           });
           
@@ -104,21 +98,21 @@ export default function DashboardHomePage() {
               ...uploadedImage,
               dayNumber: day
             });
+            console.log(`🔍 GALLERY: Day ${day} (${currentDateString}) - HAS IMAGE`);
           } else {
             // Missing image for this day
-            const isPastDay = currentDate < today;
-            const isToday = currentDate.toDateString() === today.toDateString();
-            const isFutureDay = currentDate > today;
+            const isToday = currentDateString === todayDateString;
             
             let missingMessage = '';
             if (isToday) {
               missingMessage = `Today is Day ${day} - Upload your photo to continue your journey!`;
-            } else if (isPastDay) {
+              console.log(`🔍 GALLERY: Day ${day} (${currentDateString}) - TODAY - NEEDS UPLOAD`);
+            } else if (currentDate < today) {
               missingMessage = `You forgot to upload your Day ${day} picture on ${currentDate.toLocaleDateString()}`;
-            } else if (isFutureDay) {
-              missingMessage = `Day ${day} - Coming up on ${currentDate.toLocaleDateString()}`;
+              console.log(`🔍 GALLERY: Day ${day} (${currentDateString}) - PAST DAY - MISSED`);
             } else {
-              missingMessage = `Day ${day} - Upload your photo`;
+              missingMessage = `Day ${day} - Coming up on ${currentDate.toLocaleDateString()}`;
+              console.log(`🔍 GALLERY: Day ${day} (${currentDateString}) - FUTURE DAY`);
             }
             
             sequentialGrid.push({

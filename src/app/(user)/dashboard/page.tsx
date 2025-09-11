@@ -66,9 +66,18 @@ export default function DashboardHomePage() {
           // New users: use approval date
           journeyStartDate = new Date(userProfile.approvedAt);
         } else if (uploadedImages.length > 0) {
-          // Existing users: use date of first upload as journey start
+          // Existing users: Calculate journey start based on current day expectation
           const firstUpload = uploadedImages[0];
-          journeyStartDate = new Date(firstUpload.uploadDate);
+          const firstUploadDate = new Date(firstUpload.uploadDate);
+          
+          // If first upload was today, assume journey started yesterday
+          if (firstUploadDate.toDateString() === today.toDateString()) {
+            journeyStartDate = new Date(firstUploadDate);
+            journeyStartDate.setDate(journeyStartDate.getDate() - 1);
+          } else {
+            // If first upload was not today, use that date as journey start
+            journeyStartDate = firstUploadDate;
+          }
         } else {
           // Fallback: use registration date or today
           journeyStartDate = userProfile?.registrationDate ? new Date(userProfile.registrationDate) : new Date();

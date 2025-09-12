@@ -1,18 +1,28 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 export function Logo({ className }: { className?: string }) {
+  const [imageError, setImageError] = useState(false);
+
   return (
     <Link href="/" className={cn("flex items-center", className)}>
-      <Image
-        src="/logo.png"
-        alt="Age Restore Logo"
-        width={336}
-        height={336}
-        className="h-32 w-32 sm:h-40 sm:w-40 md:h-48 md:w-48 object-contain"
-        priority
-      />
+      {!imageError ? (
+        <Image
+          src="/logo1.png"
+          alt="Age Restore Logo"
+          width={600}
+          height={180}
+          className="h-24 w-auto sm:h-32 md:h-40 lg:h-48 xl:h-56 object-contain"
+          priority
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span className="text-xl font-bold text-foreground">Age Restore</span>
+      )}
     </Link>
   );
 }

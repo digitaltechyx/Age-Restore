@@ -10,9 +10,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['"PT Sans"', 'sans-serif'],
-        headline: ['"PT Sans"', 'sans-serif'],
-        code: ['monospace'],
+        body: ['"Times New Roman"', 'Times', 'serif'],
+        headline: ['"Times New Roman"', 'Times', 'serif'],
+        code: ['"Times New Roman"', 'Times', 'serif'],
       },
       colors: {
         background: 'hsl(var(--background))',

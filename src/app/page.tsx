@@ -48,21 +48,24 @@ export default function Home() {
                          </Button>
                        </div>
               </div>
-              <Image
-                src="/hero-image.png"
-                width="600"
-                height="400"
-                alt="Your custom hero image for Age Restore"
-                quality={95}
-                priority
-                className="mx-auto aspect-video overflow-hidden rounded-xl object-cover w-full max-w-md sm:max-w-lg lg:order-last lg:aspect-square shadow-lg"
-              />
+              <div className="relative w-full h-full lg:order-last">
+                <Image
+                  src="/hero-image.png"
+                  width={800}
+                  height={600}
+                  alt="Your custom hero image for Age Restore"
+                  quality={95}
+                  priority
+                  className="w-full h-full object-cover rounded-xl shadow-2xl drop-shadow-2xl"
+                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 100vw, (max-width: 1024px) 50vw, 40vw"
+                />
+              </div>
             </div>
           </div>
         </section>
       </main>
       <footer className="flex flex-col gap-2 sm:flex-row py-6 w-full shrink-0 items-center px-4 md:px-6 border-t">
-        <p className="text-xs text-muted-foreground">&copy; 2024 AgeRestore. All rights reserved.</p>
+        <p className="text-xs text-muted-foreground">&copy; 2025 AgeRestore. All rights reserved.</p>
         <nav className="sm:ml-auto flex gap-4 sm:gap-6">
           <Link href="/terms" className="text-xs hover:underline underline-offset-4" prefetch={false}>
             Terms of Service

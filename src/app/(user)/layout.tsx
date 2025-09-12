@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="flex flex-1 flex-col">
           <header className="flex h-16 items-center justify-between border-b bg-card px-4 md:px-6">
             <div className="flex items-center gap-4">
-              <SidebarTrigger className="md:hidden" />
+              <SidebarTrigger className="lg:hidden" />
               <h1 className="text-lg font-semibold md:text-xl font-headline">Dashboard</h1>
             </div>
             <div className="flex items-center gap-4">

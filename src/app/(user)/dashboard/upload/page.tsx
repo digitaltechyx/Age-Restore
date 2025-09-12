@@ -550,7 +550,9 @@ export default function UploadPage() {
   return (
     <div className="space-y-6 sm:space-y-8 max-w-2xl mx-auto px-4 sm:px-0">
       <div>
-                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">Upload Your Photo</h1>
+                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight font-headline">
+                  Upload Your Photo
+                  </h1>
         <p className="text-sm sm:text-base text-muted-foreground">
           Capture your moment for today. You can upload one picture per day.
         </p>

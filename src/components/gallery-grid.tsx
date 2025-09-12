@@ -36,7 +36,7 @@ interface GalleryGridProps {
 export function GalleryGrid({
   images,
   className = "",
-  gridCols = { default: 1, sm: 2, md: 3, lg: 4, xl: 5 },
+  gridCols = { default: 2, sm: 2, md: 3, lg: 4, xl: 5 },
   aspectRatio = 'square',
   showDate = true,
   showFileName = false,
@@ -178,7 +178,7 @@ export function GalleryGrid({
 export const GalleryPresets = {
   // User dashboard gallery
   userDashboard: {
-    gridCols: { default: 1, sm: 2, md: 3, lg: 4, xl: 5 },
+    gridCols: { default: 2, sm: 2, md: 3, lg: 4, xl: 5 },
     aspectRatio: 'square' as const,
     showDate: true,
     showFileName: false,

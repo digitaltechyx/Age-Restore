@@ -5,8 +5,7 @@ import Image from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X, ChevronLeft, ChevronRight, Download, Share2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface GalleryImage {
   id: string;
@@ -27,8 +26,6 @@ interface ImageModalProps {
 }
 
 export function ImageModal({ isOpen, onClose, images, currentIndex, onIndexChange }: ImageModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
 
   const currentImage = images[currentIndex];
 
@@ -68,63 +65,6 @@ export function ImageModal({ isOpen, onClose, images, currentIndex, onIndexChang
     }
   };
 
-  const handleDownload = async () => {
-    if (!currentImage) return;
-    
-    try {
-      setIsLoading(true);
-      const response = await fetch(currentImage.imageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = currentImage.fileName || `day-${currentImage.dayNumber || 'unknown'}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Download Started",
-        description: "Your image is being downloaded.",
-      });
-    } catch (error) {
-      toast({
-        title: "Download Failed",
-        description: "Failed to download the image. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleShare = async () => {
-    if (!currentImage) return;
-    
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `Day ${currentImage.dayNumber || 'Unknown'} - My Journey`,
-          text: currentImage.moodText || 'Check out my journey!',
-          url: currentImage.imageUrl,
-        });
-      } else {
-        // Fallback: copy to clipboard
-        await navigator.clipboard.writeText(currentImage.imageUrl);
-        toast({
-          title: "Link Copied",
-          description: "Image link has been copied to clipboard.",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Share Failed",
-        description: "Failed to share the image. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   if (!currentImage) return null;
 
@@ -139,35 +79,6 @@ export function ImageModal({ isOpen, onClose, images, currentIndex, onIndexChang
                 <span className="ml-2 text-2xl">{currentImage.moodEmoji}</span>
               )}
             </DialogTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleShare}
-                className="flex items-center gap-2"
-              >
-                <Share2 className="h-4 w-4" />
-                Share
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownload}
-                disabled={isLoading}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                {isLoading ? "Downloading..." : "Download"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-                className="h-8 w-8 p-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         </DialogHeader>
 
